@@ -18,24 +18,50 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+# ------------------------------------------------------------------------------
+# Environment
+# https://django-environ.readthedocs.io/
+# ------------------------------------------------------------------------------
+
 env = environ.Env()
 environ.Env.read_env(BASE_DIR / ".env")
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
+# ------------------------------------------------------------------------------
+# Security
+# SECRET_KEY:              https://docs.djangoproject.com/en/6.1/ref/settings/#secret-key
+# DEBUG:                   https://docs.djangoproject.com/en/6.1/ref/settings/#debug
+# ALLOWED_HOSTS:           https://docs.djangoproject.com/en/6.1/ref/settings/#allowed-hosts
+# CSRF_TRUSTED_ORIGINS:    https://docs.djangoproject.com/en/6.1/ref/settings/#csrf-trusted-origins
+# SECURE_PROXY_SSL_HEADER: https://docs.djangoproject.com/en/6.1/ref/settings/#secure-proxy-ssl-header
+# ------------------------------------------------------------------------------
+
 SECRET_KEY = env("SECRET_KEY")
 
-# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG", default=False)
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[])
 
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
-# Application definition
+# Only valid if the proxy strips X-Forwarded-Proto from incoming requests and
+# sets it itself for HTTPS requests. Otherwise keep this setting removed.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+
+# ------------------------------------------------------------------------------
+# CORS
+# https://github.com/adamchainz/django-cors-headers
+# ------------------------------------------------------------------------------
+
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOW_CREDENTIALS = True
+
+
+# ------------------------------------------------------------------------------
+# Applications
+# https://docs.djangoproject.com/en/6.1/ref/settings/#installed-apps
+# ------------------------------------------------------------------------------
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -49,9 +75,15 @@ INSTALLED_APPS = [
     "app_auth",
 ]
 
+
+# ------------------------------------------------------------------------------
+# Middleware
+# https://docs.djangoproject.com/en/6.1/ref/settings/#middleware
+# ------------------------------------------------------------------------------
+
 MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -62,6 +94,12 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "core.urls"
+
+
+# ------------------------------------------------------------------------------
+# Templates
+# https://docs.djangoproject.com/en/6.1/ref/settings/#templates
+# ------------------------------------------------------------------------------
 
 TEMPLATES = [
     {
@@ -81,16 +119,23 @@ TEMPLATES = [
 WSGI_APPLICATION = "core.wsgi.application"
 
 
+# ------------------------------------------------------------------------------
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
+# ------------------------------------------------------------------------------
 
 DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
 
 
-# Password validation
+# ------------------------------------------------------------------------------
+# Authentication
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
+# ------------------------------------------------------------------------------
+
+# Must match the app label in INSTALLED_APPS and the name of the User model.
+AUTH_USER_MODEL = "app_auth.User"
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -108,8 +153,10 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
+# ------------------------------------------------------------------------------
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
+# ------------------------------------------------------------------------------
 
 LANGUAGE_CODE = "en-us"
 
@@ -120,8 +167,12 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
+# ------------------------------------------------------------------------------
+# Static & Media files
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
+# https://docs.djangoproject.com/en/6.1/ref/settings/#storages
+# https://whitenoise.readthedocs.io/
+# ------------------------------------------------------------------------------
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -129,13 +180,42 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
+
+# ------------------------------------------------------------------------------
+# Email
+# https://docs.djangoproject.com/en/6.1/ref/settings/#mailers
+# https://docs.djangoproject.com/en/6.1/topics/email/#configuring-email
+# ------------------------------------------------------------------------------
+
+# Console backend only prints mails to the terminal (development).
+# Production needs an SMTP backend.
 MAILERS = {
     "default": {
         "BACKEND": "django.core.mail.backends.console.EmailBackend",
     },
 }
 
-REST_FRAMEWORK = {}
+
+# ------------------------------------------------------------------------------
+# Django REST Framework
+# https://www.django-rest-framework.org/api-guide/settings/
+# https://django-rest-framework-simplejwt.readthedocs.io/
+# ------------------------------------------------------------------------------
+
+REST_FRAMEWORK = {
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+}
