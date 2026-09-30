@@ -6,12 +6,11 @@ The refresh cookie is only sent to paths below ``AUTH_COOKIE["REFRESH_PATH"]``
 
 from django.urls import path
 
-from .views import LoginView, LogoutView, MeView, RefreshView, RegisterView
+from .views import CookieTokenRefreshView, LoginView, LogoutView, RegisterView
 
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     path("login/", LoginView.as_view(), name="login"),
-    path("refresh/", RefreshView.as_view(), name="refresh"),
     path("logout/", LogoutView.as_view(), name="logout"),
-    path("me/", MeView.as_view(), name="me"),
+    path("token/refresh/", CookieTokenRefreshView.as_view(), name="refresh"),
 ]

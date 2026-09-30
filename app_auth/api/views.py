@@ -7,8 +7,12 @@ from django.conf import settings
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.views import (
+    TokenBlacklistView,
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
 from .serializers import LoginSerializer, RegisterSerializer, UserSerializer
 from .utils import delete_auth_cookies, get_tokens_for_user, set_auth_cookies
@@ -132,3 +136,48 @@ class LogoutView(TokenBlacklistView):
         except TokenError:
             # Token already expired or blacklisted: the cookies are deleted anyway.
             pass
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    """Create new tokens from the refresh cookie.
+
+    Endpoint: ``POST /auth/token/refresh/``
+    Authentication: none, disabled by the parent class.
+    """
+
+    def post(self, request, *args, **kwargs):
+        """Read the refresh token from the cookie and set new auth cookies.
+
+        With ``ROTATE_REFRESH_TOKENS`` a new refresh token is set as well and
+        the old one is blacklisted (``BLACKLIST_AFTER_ROTATION``).
+
+        Request body:
+            none, the refresh token is read from the cookie.
+
+        Responses:
+            200: ``detail``. New access cookie, with rotation also a new refresh cookie.
+            401: Refresh cookie missing, expired or blacklisted.
+        """
+        refresh_token = request.COOKIES.get(settings.AUTH_COOKIE["REFRESH_NAME"])
+
+        if not refresh_token:
+            raise InvalidToken("No refresh token cookie.")
+
+        serializer = self.get_serializer(data={"refresh": refresh_token})
+
+        try:
+            serializer.is_valid(raise_exception=True)
+        except TokenError as e:
+            # Same handling as the parent class: turns into a 401 response.
+            raise InvalidToken(e.args[0]) from e
+
+        response = Response(
+            {
+                "detail": "Tokens refreshed!",
+            },
+            status=status.HTTP_200_OK,
+        )
+
+        set_auth_cookies(response, serializer.validated_data)
+
+        return response
