@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -217,6 +218,34 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "app_auth.api.authentication.CookieJWTAuthentication",
     ],
+}
+
+
+# ==============================================================================
+# SimpleJWT
+# ==============================================================================
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "SIGNING_KEY": env("JWT_SIGNING_KEY", default=SECRET_KEY),
+}
+
+
+# ==============================================================================
+# AUTH_COOKIE
+# ==============================================================================
+
+AUTH_COOKIE = {
+    "ACCESS_NAME": "access_token",
+    "ACCESS_PATH": "/",
+    "REFRESH_NAME": "refresh_token",
+    "REFRESH_PATH": "/auth/",
+    "SAMESITE": "Lax",
+    "SECURE": env.bool("AUTH_COOKIE_SECURE", default=True),
 }
