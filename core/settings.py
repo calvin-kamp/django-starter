@@ -14,6 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -59,6 +60,15 @@ if env.bool("USE_X_FORWARDED_PROTO", default=False):
 COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", default=True)
 SESSION_COOKIE_SECURE = COOKIE_SECURE
 CSRF_COOKIE_SECURE = COOKIE_SECURE
+
+
+# ------------------------------------------------------------------------------
+# Frontend (own setting)
+# ------------------------------------------------------------------------------
+
+# Address of the frontend, e.g. https://app.example.com
+# Links in emails (e.g. the activation link) point to this address.
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="").rstrip("/")
 
 
 # ------------------------------------------------------------------------------
@@ -298,3 +308,31 @@ AUTH_COOKIE = {
     # Only over HTTPS. False only for local development over HTTP.
     "SECURE": COOKIE_SECURE,
 }
+
+
+# ------------------------------------------------------------------------------
+# Registration (own setting, used in app_auth/api/)
+# https://docs.djangoproject.com/en/6.1/ref/settings/#password-reset-timeout
+# ------------------------------------------------------------------------------
+
+AUTH_REGISTRATION = {
+    # False: the new user is active and logged in right away (auth cookies set).
+    # True:  the new user is inactive and gets an activation link by email.
+    #        No cookies are set. Opening the link activates and logs them in.
+    "EMAIL_ACTIVATION": env.bool("AUTH_EMAIL_ACTIVATION", default=False),
+    # Path of the frontend page the link in the email points to, appended to
+    # FRONTEND_BASE_URL. {uid} and {token} are filled in. The page sends both
+    # values to POST /auth/activate/<uidb64>/<token>/.
+    "ACTIVATION_PATH": env(
+        "AUTH_ACTIVATION_PATH",
+        default="/activate/{uid}/{token}",
+    ),
+}
+
+if AUTH_REGISTRATION["EMAIL_ACTIVATION"] and not FRONTEND_BASE_URL:
+    raise ImproperlyConfigured(
+        "AUTH_EMAIL_ACTIVATION is on, but FRONTEND_BASE_URL is not set."
+    )
+
+# How long activation links (and password reset links) stay valid, in seconds.
+PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT", default=60 * 60 * 24 * 3)

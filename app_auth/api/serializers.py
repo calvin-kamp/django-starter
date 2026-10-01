@@ -3,8 +3,12 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from .tokens import activation_token_generator
 
 User = get_user_model()
 
@@ -56,8 +60,51 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        """Create the user. ``create_user`` hashes the password."""
+        """Create the user. ``create_user`` hashes the password.
+
+        ``validated_data`` also contains the arguments of ``serializer.save()``,
+        e.g. ``is_active=False`` from the registration with email activation.
+        """
         return User.objects.create_user(**validated_data)
+
+
+class ActivationSerializer(serializers.Serializer):
+    """Check ``uidb64`` and ``token`` from the activation link.
+
+    After a successful check, ``validated_data["user"]`` holds the user.
+    """
+
+    uidb64 = serializers.CharField()
+    token = serializers.CharField()
+
+    default_error_messages = {
+        "invalid_link": "Activation link is invalid or expired.",
+    }
+
+    def validate(self, attrs):
+        """Load the user of ``uidb64`` and check the token.
+
+        All errors return the same message, so the response does not reveal
+        whether a user exists.
+        """
+        try:
+            user_id = force_str(urlsafe_base64_decode(attrs["uidb64"]))
+            user = User.objects.get(pk=user_id)
+        except (
+            ValueError,
+            TypeError,
+            OverflowError,
+            User.DoesNotExist,
+            DjangoValidationError,
+        ):
+            self.fail("invalid_link")
+
+        if not activation_token_generator.check_token(user, attrs["token"]):
+            self.fail("invalid_link")
+
+        attrs["user"] = user
+
+        return attrs
 
 
 class LoginSerializer(TokenObtainPairSerializer):

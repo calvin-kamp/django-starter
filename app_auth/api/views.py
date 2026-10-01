@@ -4,6 +4,7 @@ All tokens are sent as ``HttpOnly`` cookies, never in the response body.
 """
 
 from django.conf import settings
+from django.db import transaction
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -14,12 +15,26 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
-from .serializers import LoginSerializer, RegisterSerializer, UserSerializer
-from .utils import delete_auth_cookies, get_tokens_for_user, set_auth_cookies
+from .serializers import (
+    ActivationSerializer,
+    LoginSerializer,
+    RegisterSerializer,
+    UserSerializer,
+)
+from .utils import (
+    delete_auth_cookies,
+    get_tokens_for_user,
+    send_activation_email,
+    set_auth_cookies,
+)
 
 
 class RegisterView(generics.CreateAPIView):
-    """Create a user and log them in.
+    """Create a user. What happens next depends on ``AUTH_REGISTRATION``.
+
+    - ``EMAIL_ACTIVATION`` off: the user is active and logged in right away.
+    - ``EMAIL_ACTIVATION`` on: the user is inactive and gets an activation
+      link by email. No cookies are set. ``ActivateView`` logs them in.
 
     Endpoint: ``POST /auth/register/``
     Authentication: none, an expired access cookie must not block the request.
@@ -30,17 +45,29 @@ class RegisterView(generics.CreateAPIView):
     authentication_classes = ()
 
     def create(self, request, *args, **kwargs):
-        """Validate the data, create the user and set both auth cookies.
+        """Validate the data and create the user.
+
+        The setting is read on every request, so tests can change it with
+        ``override_settings``.
 
         Request body:
             ``username``, ``email``, ``password``
 
         Responses:
-            201: ``detail`` and ``user``. Access and refresh cookie are set.
+            201: ``detail`` and ``user``. Without email activation, access and
+                refresh cookie are set.
             400: Field errors, e.g. email already exists or password too weak.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        if settings.AUTH_REGISTRATION["EMAIL_ACTIVATION"]:
+            return self._register_with_activation(serializer)
+
+        return self._register_and_login(serializer)
+
+    def _register_and_login(self, serializer):
+        """Create an active user and set both auth cookies."""
         user = serializer.save()
 
         response = Response(
@@ -49,6 +76,76 @@ class RegisterView(generics.CreateAPIView):
                 "user": UserSerializer(user).data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+        set_auth_cookies(response, get_tokens_for_user(user))
+
+        return response
+
+    def _register_with_activation(self, serializer):
+        """Create an inactive user and send the activation link.
+
+        If the mail can't be sent, the user is not saved. Otherwise username
+        and email would be taken by an account that can never be activated.
+        The error then results in a 500 response.
+        """
+        with transaction.atomic():
+            user = serializer.save(is_active=False)
+            send_activation_email(user)
+
+        return Response(
+            {
+                "detail": "Registration successful! Please check your email to activate your account.",
+                "user": UserSerializer(user).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ActivateView(generics.GenericAPIView):
+    """Activate a user with the data from the activation link and log them in.
+
+    Endpoint: ``POST /auth/activate/<uidb64>/<token>/``
+    Authentication: none, the user is not logged in yet.
+
+    POST instead of GET, because the request changes data (see
+    ``AUTH_COOKIE["SAMESITE"]`` in the settings). The frontend page of
+    ``AUTH_REGISTRATION["ACTIVATION_PATH"]`` reads ``uid`` and ``token`` from
+    its URL and sends them here.
+    """
+
+    serializer_class = ActivationSerializer
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+
+    def post(self, request, uidb64, token, *args, **kwargs):
+        """Check the link, set the user active and set both auth cookies.
+
+        The link works only once, so it can't be used to log in a second time.
+
+        URL parameters:
+            ``uidb64``: encoded user id, ``token``: activation token.
+
+        Request body:
+            none.
+
+        Responses:
+            200: ``detail`` and ``user``. Access and refresh cookie are set.
+            400: Link invalid, expired or already used.
+        """
+        serializer = self.get_serializer(data={"uidb64": uidb64, "token": token})
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data["user"]
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+
+        response = Response(
+            {
+                "detail": "Account activated!",
+                "user": UserSerializer(user).data,
+            },
+            status=status.HTTP_200_OK,
         )
 
         set_auth_cookies(response, get_tokens_for_user(user))
