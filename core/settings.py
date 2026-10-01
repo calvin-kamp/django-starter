@@ -45,9 +45,20 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[])
 
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
-# Only valid if the proxy strips X-Forwarded-Proto from incoming requests and
-# sets it itself for HTTPS requests. Otherwise keep this setting removed.
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Behind a reverse proxy that terminates HTTPS (e.g. nginx, Traefik), Django only
+# sees HTTP. This header tells Django that the original request was HTTPS.
+# Only enable it if the proxy strips X-Forwarded-Proto from incoming requests and
+# sets it itself. Otherwise clients could fake HTTPS.
+if env.bool("USE_X_FORWARDED_PROTO", default=False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Send the session and CSRF cookie (Django admin) only over HTTPS.
+# Same switch as the auth cookies: False only for local development over HTTP.
+# https://docs.djangoproject.com/en/6.1/ref/settings/#session-cookie-secure
+# https://docs.djangoproject.com/en/6.1/ref/settings/#csrf-cookie-secure
+COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", default=True)
+SESSION_COOKIE_SECURE = COOKIE_SECURE
+CSRF_COOKIE_SECURE = COOKIE_SECURE
 
 
 # ------------------------------------------------------------------------------
@@ -199,13 +210,30 @@ STORAGES = {
 # https://docs.djangoproject.com/en/6.1/topics/email/#configuring-email
 # ------------------------------------------------------------------------------
 
-# Console backend only prints mails to the terminal (development).
-# Production needs an SMTP backend.
+# Development: the console backend prints mails to the terminal.
+# Production: EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+# and the EMAIL_* values in .env.
+
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@localhost")
+
 MAILERS = {
     "default": {
-        "BACKEND": "django.core.mail.backends.console.EmailBackend",
+        "BACKEND": env(
+            "EMAIL_BACKEND",
+            default="django.core.mail.backends.console.EmailBackend",
+        ),
     },
 }
+
+# The SMTP backend needs connection options, the console backend accepts none.
+if MAILERS["default"]["BACKEND"].endswith("smtp.EmailBackend"):
+    MAILERS["default"]["OPTIONS"] = {
+        "host": env("EMAIL_HOST"),
+        "port": env.int("EMAIL_PORT", default=587),
+        "username": env("EMAIL_HOST_USER", default=""),
+        "password": env("EMAIL_HOST_PASSWORD", default=""),
+        "use_tls": env.bool("EMAIL_USE_TLS", default=True),
+    }
 
 
 # ------------------------------------------------------------------------------
@@ -248,5 +276,6 @@ AUTH_COOKIE = {
     "REFRESH_NAME": "refresh_token",
     "REFRESH_PATH": "/auth/",
     "SAMESITE": "Lax",
-    "SECURE": env.bool("AUTH_COOKIE_SECURE", default=True),
+    # Only over HTTPS. False only for local development over HTTP.
+    "SECURE": COOKIE_SECURE,
 }
