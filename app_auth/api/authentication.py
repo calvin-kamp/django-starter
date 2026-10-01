@@ -12,13 +12,21 @@ class CookieJWTAuthentication(JWTAuthentication):
     """
 
     def authenticate(self, request):
+        """Return the user and the token of the access cookie.
+
+        Returns:
+            ``(user, token)`` for a valid cookie, ``None`` without a cookie.
+            ``None`` means anonymous; the permission classes decide whether
+            that is allowed.
+
+        Raises:
+            InvalidToken: The cookie is invalid or expired. Results in a 401.
+        """
         raw_token = request.COOKIES.get(settings.AUTH_COOKIE["ACCESS_NAME"])
 
-        # No cookie: the request is anonymous. Permissions decide if that's allowed.
         if raw_token is None:
             return None
 
-        # Invalid or expired token: raises InvalidToken, which results in a 401.
         validated_token = self.get_validated_token(raw_token)
 
         return self.get_user(validated_token), validated_token
