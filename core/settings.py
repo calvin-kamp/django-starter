@@ -66,7 +66,9 @@ CSRF_COOKIE_SECURE = COOKIE_SECURE
 # https://github.com/adamchainz/django-cors-headers
 # ------------------------------------------------------------------------------
 
+# Frontend origins that may call the API, e.g. https://app.example.com
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+# Required for the auth cookies: allows the browser to send and receive them.
 CORS_ALLOW_CREDENTIALS = True
 
 
@@ -145,7 +147,8 @@ DATABASES = {
 
 # ------------------------------------------------------------------------------
 # Authentication
-# https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
+# AUTH_USER_MODEL:          https://docs.djangoproject.com/en/6.1/topics/auth/customizing/#substituting-a-custom-user-model
+# AUTH_PASSWORD_VALIDATORS: https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
 # ------------------------------------------------------------------------------
 
 # Must match the app label in INSTALLED_APPS and the name of the User model.
@@ -243,38 +246,54 @@ if MAILERS["default"]["BACKEND"].endswith("smtp.EmailBackend"):
 # ------------------------------------------------------------------------------
 
 REST_FRAMEWORK = {
+    # Every endpoint requires a logged-in user. Public views set
+    # permission_classes = (AllowAny,) themselves.
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Reads the access token from the cookie instead of the Authorization header.
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "app_auth.api.authentication.CookieJWTAuthentication",
     ],
 }
 
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # SimpleJWT
-# ==============================================================================
+# https://django-rest-framework-simplejwt.readthedocs.io/en/latest/settings.html
+# https://django-rest-framework-simplejwt.readthedocs.io/en/latest/blacklist_app.html
+# ------------------------------------------------------------------------------
 
 SIMPLE_JWT = {
+    # Lifetimes also define how long the auth cookies live.
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # Every refresh returns a new refresh token, the old one is blacklisted.
+    # Needs "rest_framework_simplejwt.token_blacklist" in INSTALLED_APPS.
+    # Expired entries: run "python manage.py flushexpiredtokens" regularly.
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
+    # Separate key, so changing SECRET_KEY doesn't log out all users (and vice versa).
     "SIGNING_KEY": env("JWT_SIGNING_KEY", default=SECRET_KEY),
 }
 
 
-# ==============================================================================
-# AUTH_COOKIE
-# ==============================================================================
+# ------------------------------------------------------------------------------
+# Auth cookies (own setting, used in app_auth/api/)
+# https://docs.djangoproject.com/en/6.1/ref/request-response/#django.http.HttpResponse.set_cookie
+# https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie
+# ------------------------------------------------------------------------------
 
 AUTH_COOKIE = {
     "ACCESS_NAME": "access_token",
+    # Sent with every request to the API.
     "ACCESS_PATH": "/",
     "REFRESH_NAME": "refresh_token",
+    # Only sent to /auth/... (refresh and logout), not with every request.
     "REFRESH_PATH": "/auth/",
+    # Lax: other websites can't send the cookies with POST/PUT/PATCH/DELETE.
+    # GET requests must therefore never change data.
     "SAMESITE": "Lax",
     # Only over HTTPS. False only for local development over HTTP.
     "SECURE": COOKIE_SECURE,
